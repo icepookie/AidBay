@@ -29,6 +29,7 @@ const correctUnderstanding = document.querySelector("#correct-understanding");
 const voiceToggle = document.querySelector("#voice-toggle");
 const voiceLabel = document.querySelector("#voice-label");
 const keyboard = document.querySelector("#keyboard");
+const endConversation = document.querySelector("#end-conversation");
 const help = document.querySelector("#help");
 const textDialog = document.querySelector("#text-dialog");
 const helpDialog = document.querySelector("#help-dialog");
@@ -70,6 +71,8 @@ let pendingCompletionUI = null;
 let responseWaitTimer = null;
 let awaitingUserResponse = false;
 let lastRenderedResultSignature = "";
+let expectedMissing = [];
+let lastAssistantMessage = "";
 let elevenConversation = null;
 let elevenAgentConnected = false;
 let elevenConnecting = false;
@@ -117,6 +120,18 @@ function appendTranscript(role, text) {
   liveCaption.hidden = true;
   while (transcript.children.length > 60) transcript.firstElementChild?.remove();
   transcript.scrollTop = transcript.scrollHeight;
+}
+
+function normalizedWords(value){return String(value||"").toLowerCase().replace(/[^a-z0-9\s]/g," ").split(/\s+/).filter(Boolean)}
+function looksLikeEcho(message){const words=normalizedWords(message),prior=new Set(normalizedWords(lastAssistantMessage));return words.length>3&&words.filter(word=>prior.has(word)).length/words.length>.72}
+function isExpectedAnswer(message){
+  if (/\b(?:i'm sorry|didn't quite catch|rephrase your question|like, i mean, do you have something to show)\b/i.test(message)||looksLikeEcho(message)) return false;
+  if (!expectedMissing.length) return true;
+  const missing=expectedMissing[0];
+  if (missing.includes("neighborhood")) return /\b(?:san francisco|downtown|tenderloin|soma|mission|civic center|bayview|haight|castro|sunset|richmond|street|st\.?|avenue|ave\.?|near|at|around|corner)\b/i.test(message);
+  if (missing.includes("adult")) return /\b(?:adult|woman|female|man|male|family|child|children|kid|youth|teen)\b/i.test(message);
+  if (missing.includes("now")) return /\b(?:now|tonight|today|urgent|right away|later|tomorrow|planning|ahead)\b/i.test(message);
+  return /\b(?:shelter|bed|food|meal|health|doctor|recovery|drug|legal|shower|help)\b/i.test(message);
 }
 
 function stopRecognition() {
@@ -218,13 +233,15 @@ async function syncUserMessageWithAidBay(message) {
     if (!response.ok) return;
     const data = await response.json();
     conversationState = data.state;
+    expectedMissing = data.missing ?? [];
     renderUnderstanding(conversationState.understanding);
     if (data.nextStep === "feedback") { latestResults = []; pendingCompletionUI = "feedback"; }
     if (data.nextStep === "another_request") { latestResults = []; pendingCompletionUI = "another"; }
     if (data.results?.length) {
       latestResults = data.results;
+      showServiceList(latestResults);
       const facts = data.results.slice(0, 3).map((item) => ({name:item.name, phone:item.phone, address:item.address, eligibility:item.eligibility, availability:item.availabilityLabel, next:item.nextAction, source:item.source?.url}));
-      elevenConversation?.sendContextualUpdate(`AidBay retrieved these service records for the user's latest request: ${JSON.stringify(facts)}. Use only these facts for recommendations. Clearly state that availability and eligibility must be confirmed. Keep the response concise, then use showServiceResults.`);
+      elevenConversation?.sendContextualUpdate(`AidBay retrieved these service records for the user's latest request: ${JSON.stringify(facts)}. Recommend only these named services. Never invent another organization. Tell the user the cards and phone buttons are now on screen. Clearly state availability and eligibility must be confirmed.`);
     } else {
       latestResults = [];
       lastRenderedResultSignature = "";
@@ -271,9 +288,9 @@ async function startElevenAgent() {
         voiceLabel.textContent = "Pause conversation";
         setConversationStarted(true);
         liveCaption.textContent = "Listening… start speaking now.";
-        companionStep.textContent = "Listening now";
+        companionStep.textContent = "Mic on";
         setVisualState("listening", "I’m listening…", "Start speaking whenever you’re ready.");
-        elevenConversation?.sendContextualUpdate("AidBay policy: Never say or display bracketed tone directions. Never ask whether the user is still there and never send silence reminders. Do not greet first; the user begins speaking immediately. Ask exactly one clear qualification question at a time and wait for the answer. Do not reveal recommendations until AidBay retrieval supplies grounded service records. Recommend direct providers, not SFHOT. Never claim availability or eligibility is guaranteed.");
+        fetch("/api/services").then(response=>response.json()).then(items=>elevenConversation?.sendContextualUpdate(`AidBay policy: Never say bracketed tone directions. Never ask whether the user is still there and never narrate ending due to silence. Do not greet first. Ask one qualification question at a time. Recommend ONLY a service from this approved catalog, and only after AidBay displays results: ${JSON.stringify(items.map(({id,name,phone,address,eligibility,availabilityLabel})=>({id,name,phone,address,eligibility,availabilityLabel})))}. Never invent organizations such as Mary Elizabeth Inn. If no cards are displayed, ask the next question and do not recommend anything. When the user asks to call, use the callService client tool.`)).catch(()=>{});
         integrationSummary.textContent = "Voice conversation: your live ElevenLabs agent. Service retrieval: AidBay curated records and Moss index.";
       },
       onMessage: ({ message, role }) => {
@@ -282,17 +299,22 @@ async function startElevenAgent() {
         if (!cleaned || /^[.·…\s-]+$/.test(cleaned)) return;
         if (role !== "user" && /\b(?:are you still there|if you(?:'re| are) still there|please let me know if you need assistance)\b/i.test(cleaned)) return;
         if (role === "user") {
+          if (!isExpectedAnswer(cleaned)) return;
           clearTimeout(responseWaitTimer);
           awaitingUserResponse = false;
           lastUserMessage = cleaned;
           setConversationStarted(true);
+          companionStep.textContent = "Hearing you…";
           liveCaption.textContent = cleaned;
           appendTranscript("user", cleaned);
           maybeHandleVoiceCall(cleaned);
           flowStage.hidden = true;
           localSyncPromise = localSyncPromise.then(() => syncUserMessageWithAidBay(cleaned));
         } else {
+          if (/\b(?:it seems you(?:'re| are) not responding|i(?:'ll| will) end this conversation|feel free to reach out again)\b/i.test(cleaned)) { resetConversation(); return; }
+          if (/\b(?:i'm sorry,? i didn't quite catch|could you please rephrase|unable to make calls directly|can't provide specific contact numbers)\b/i.test(cleaned)) return;
           awaitingUserResponse = /\?\s*$/.test(cleaned);
+          lastAssistantMessage = cleaned;
           appendTranscript("assistant", cleaned);
           showAgentSpeech(cleaned);
         }
@@ -300,7 +322,7 @@ async function startElevenAgent() {
       onModeChange: ({ mode }) => {
         agentSpeaking = mode === "speaking";
         if (mode === "listening") {
-          companionStep.textContent = "Listening now";
+          companionStep.textContent = "Mic on";
           if (pendingCompletionUI === "feedback") { pendingCompletionUI = null; showFeedback(); }
           else if (pendingCompletionUI === "another") { pendingCompletionUI = null; beginAnotherRequest(); }
           else if (latestResults.length) showServiceList(latestResults);
@@ -433,6 +455,8 @@ function beginAnotherRequest() {
   conversationState = { stage: "new" };
   latestResults = [];
   lastRenderedResultSignature = "";
+  expectedMissing = [];
+  lastAssistantMessage = "";
   activeService = null;
   results.replaceChildren();
   renderUnderstanding(null);
@@ -814,6 +838,7 @@ function resetConversation() {
   helpDialog.close();
 }
 reset.addEventListener("click", resetConversation);
+endConversation.addEventListener("click", resetConversation);
 clearTranscript.addEventListener("click", () => { transcriptEntries = []; transcript.replaceChildren(); });
 
 async function loadServices() {
