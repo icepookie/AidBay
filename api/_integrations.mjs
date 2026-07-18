@@ -16,8 +16,7 @@ async function getMoss({load=true}={}){
 export function integrationConfig(){return {mossConfigured:mossConfigured(),brightDataConfigured:brightDataConfigured(),indexName:process.env.MOSS_INDEX_NAME||"aidbay"}}
 
 export async function mossSearch(query,topK=5){
-  const client=await getMoss();if(!client)return {used:false,reason:"credentials_missing",items:[]};
-  try{const found=await client.query(process.env.MOSS_INDEX_NAME||"aidbay",query,{topK,alpha:.7});const byId=new Map(services.map(item=>[item.id,item]));return {used:true,items:(found.docs||[]).map(doc=>byId.get(doc.id)).filter(Boolean),timeTakenInMs:found.timeTakenInMs}}
+  try{const client=await getMoss();if(!client)return {used:false,reason:"credentials_missing",items:[]};const found=await client.query(process.env.MOSS_INDEX_NAME||"aidbay",query,{topK,alpha:.7});const byId=new Map(services.map(item=>[item.id,item]));return {used:true,items:(found.docs||[]).map(doc=>byId.get(doc.id)).filter(Boolean),timeTakenInMs:found.timeTakenInMs}}
   catch(error){console.error("Moss query failed",error);return {used:false,reason:"query_failed",items:[]}}
 }
 
