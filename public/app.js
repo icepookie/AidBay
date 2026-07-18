@@ -91,17 +91,21 @@ if ("speechSynthesis" in window) speechSynthesis.addEventListener("voiceschanged
 
 function setVisualState(mode, title, prompt) {
   orb.className = `orb ${mode}`;
+  voiceShell.classList.toggle("is-listening", mode === "listening");
+  voiceShell.classList.toggle("is-speaking", mode === "speaking");
   stateTitle.textContent = title;
   statePrompt.textContent = prompt;
   captionLabel.textContent = mode === "listening" ? "LIVE CAPTIONS · LISTENING" : "CONVERSATION CAPTIONS";
 }
 
 function appendTranscript(role, text) {
-  text = String(text || "").replace(/^\s*\[(?:patiently|warmly|gently|calmly|kindly|empathetically)\]\s*/i, "").trim();
+  text = String(text || "").replace(/\[(?:patiently|warmly|gently|calmly|kindly|empathetically|reassuringly|supportively)\]\s*/gi, "").trim();
   if (!text) return;
+  if (/^[.·…\s-]+$/.test(text)) return;
+  if (role === "assistant" && /\b(?:are you still there|if you(?:'re| are) still there|please let me know if you need assistance)\b/i.test(text)) return;
+  if (role === "assistant" && /^(?:hi|hello)(?: there)?[!.]?\s*(?:how (?:can|may) i help|what can i)/i.test(text)) return;
   const previous = transcriptEntries.at(-1);
   if (previous?.role === role && previous.text.toLowerCase() === text.toLowerCase()) return;
-  if (role === "assistant" && /^(hi|hello)( there)?[!.]?\s*(how (can|may) i help|what can i)/i.test(text) && transcriptEntries.some((entry) => entry.role === "user")) return;
   transcriptEntries.push({ role, text });
   transcriptEntries = transcriptEntries.slice(-60);
   const line = document.createElement("p");
@@ -110,6 +114,7 @@ function appendTranscript(role, text) {
   name.textContent = role === "user" ? "You: " : "AidBay: ";
   line.append(name, document.createTextNode(text));
   transcript.append(line);
+  liveCaption.hidden = true;
   while (transcript.children.length > 60) transcript.firstElementChild?.remove();
   transcript.scrollTop = transcript.scrollHeight;
 }
@@ -220,6 +225,10 @@ async function syncUserMessageWithAidBay(message) {
       latestResults = data.results;
       const facts = data.results.slice(0, 3).map((item) => ({name:item.name, phone:item.phone, address:item.address, eligibility:item.eligibility, availability:item.availabilityLabel, next:item.nextAction, source:item.source?.url}));
       elevenConversation?.sendContextualUpdate(`AidBay retrieved these service records for the user's latest request: ${JSON.stringify(facts)}. Use only these facts for recommendations. Clearly state that availability and eligibility must be confirmed. Keep the response concise, then use showServiceResults.`);
+    } else {
+      latestResults = [];
+      lastRenderedResultSignature = "";
+      elevenConversation?.sendContextualUpdate(`Do not recommend or reveal service options yet. Required information is still missing: ${JSON.stringify(data.missing || [])}. Ask exactly one short question for the first missing item, then wait for the user to answer.`);
     }
   } catch { /* ElevenLabs conversation can continue if local retrieval is unavailable. */ }
 }
@@ -264,26 +273,28 @@ async function startElevenAgent() {
         liveCaption.textContent = "Listening… start speaking now.";
         companionStep.textContent = "Listening now";
         setVisualState("listening", "I’m listening…", "Start speaking whenever you’re ready.");
-        elevenConversation?.sendContextualUpdate("AidBay policy: Recommend direct service providers, not SFHOT. SFHOT appears separately as an optional fallback. Never claim a bed is available unless a provider-confirmed current signal says so. Ask one clear question at a time and wait for the user's response before continuing.");
+        elevenConversation?.sendContextualUpdate("AidBay policy: Never say or display bracketed tone directions. Never ask whether the user is still there and never send silence reminders. Do not greet first; the user begins speaking immediately. Ask exactly one clear qualification question at a time and wait for the answer. Do not reveal recommendations until AidBay retrieval supplies grounded service records. Recommend direct providers, not SFHOT. Never claim availability or eligibility is guaranteed.");
         integrationSummary.textContent = "Voice conversation: your live ElevenLabs agent. Service retrieval: AidBay curated records and Moss index.";
       },
       onMessage: ({ message, role }) => {
         if (!message?.trim()) return;
+        const cleaned = message.replace(/\[(?:patiently|warmly|gently|calmly|kindly|empathetically|reassuringly|supportively)\]\s*/gi, "").trim();
+        if (!cleaned || /^[.·…\s-]+$/.test(cleaned)) return;
+        if (role !== "user" && /\b(?:are you still there|if you(?:'re| are) still there|please let me know if you need assistance)\b/i.test(cleaned)) return;
         if (role === "user") {
           clearTimeout(responseWaitTimer);
           awaitingUserResponse = false;
-          lastUserMessage = message;
+          lastUserMessage = cleaned;
           setConversationStarted(true);
-          liveCaption.textContent = message;
-          appendTranscript("user", message);
-          maybeHandleVoiceCall(message);
+          liveCaption.textContent = cleaned;
+          appendTranscript("user", cleaned);
+          maybeHandleVoiceCall(cleaned);
           flowStage.hidden = true;
-          localSyncPromise = localSyncPromise.then(() => syncUserMessageWithAidBay(message));
+          localSyncPromise = localSyncPromise.then(() => syncUserMessageWithAidBay(cleaned));
         } else {
-          awaitingUserResponse = /\?\s*$/.test(message.trim());
-          appendTranscript("assistant", message);
-          liveCaption.textContent = message;
-          showAgentSpeech(message);
+          awaitingUserResponse = /\?\s*$/.test(cleaned);
+          appendTranscript("assistant", cleaned);
+          showAgentSpeech(cleaned);
         }
       },
       onModeChange: ({ mode }) => {
