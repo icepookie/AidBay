@@ -262,6 +262,9 @@ async function startElevenAgent() {
   voiceLabel.textContent = "Connecting…";
   setVisualState("thinking", "Connecting…", "Starting your private voice conversation.");
   try {
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error("This browser does not support microphone access");
+    const permissionStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+    permissionStream.getTracks().forEach(track=>track.stop());
     if (!elevenTokenPromise) elevenTokenPromise = requestElevenToken();
     const { conversationToken } = await elevenTokenPromise;
     elevenTokenPromise = null;
@@ -292,7 +295,7 @@ async function startElevenAgent() {
         liveCaption.textContent = "Listening… start speaking now.";
         companionStep.textContent = "Mic on";
         setVisualState("listening", "I’m listening…", "Start speaking whenever you’re ready.");
-        fetch("/api/services").then(response=>response.json()).then(items=>elevenConversation?.sendContextualUpdate(`AidBay policy: Never say bracketed tone directions. Never ask whether the user is still there and never narrate ending due to silence. Do not greet first. Ask one qualification question at a time. Recommend ONLY a service from this approved catalog, and only after AidBay displays results: ${JSON.stringify(items.map(({id,name,phone,address,eligibility,availabilityLabel})=>({id,name,phone,address,eligibility,availabilityLabel})))}. Never invent organizations such as Mary Elizabeth Inn. If no cards are displayed, ask the next question and do not recommend anything. When the user asks to call, use the callService client tool.`)).catch(()=>{});
+        fetch("/api/services").then(response=>response.json()).then(items=>elevenConversation?.sendContextualUpdate(`AidBay policy: Practice curiosity over assumption. Never infer gender, family status, disability, eligibility, preferences, or urgency. If the user asks for shelter without specifying who it is for, ask neutrally: “Is this for one adult, a family with children, or a young person?” Never ask them to confirm they are an adult woman unless they themselves said woman. For one adult without stated gender preferences, use gender-neutral adult options; gender-specific options may be offered only after the person requests or identifies a relevant preference. Ask one question at a time and wait. Never say bracketed tone directions, ask whether the user is still there, narrate ending due to silence, or greet first. Recommend ONLY a service from this approved catalog and only after AidBay displays results: ${JSON.stringify(items.map(({id,name,phone,address,eligibility,availabilityLabel})=>({id,name,phone,address,eligibility,availabilityLabel})))}. Never invent organizations. If no cards are displayed, ask the next neutral question. When the user asks to call, use the callService client tool.`)).catch(()=>{});
         integrationSummary.textContent = "Voice conversation: your live ElevenLabs agent. Service retrieval: AidBay curated records and Moss index.";
       },
       onMessage: ({ message, role }) => {
@@ -364,10 +367,11 @@ async function startElevenAgent() {
     elevenAgentConnected = false;
     voiceSessionActive = false;
     voiceLabel.textContent = "Pause conversation";
-    setConversationStarted(true);
-    liveCaption.textContent = "I couldn’t start the ElevenLabs voice agent. Check microphone permission and try again.";
-    companionStep.textContent = "Voice connection failed";
-    setVisualState("paused", "Voice connection failed", "You can retry or use the keyboard.");
+    setConversationStarted(false);
+    const permissionDenied=error?.name==="NotAllowedError"||/permission|not allowed/i.test(String(error?.message||error));
+    companionStep.textContent = "Ready to listen";
+    setVisualState("ready", permissionDenied?"Microphone permission is off":"Voice couldn’t connect", permissionDenied?"Allow microphone access in your browser, or type below.":"Tap the circle to retry, or type below while voice reconnects.");
+    audioStatus.textContent = `Voice start error: ${error?.name||"ConnectionError"}.`;
   }
 }
 
