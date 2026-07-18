@@ -8,5 +8,6 @@
     { "src": "/api/(.*)", "dest": "/api/$1.mjs" },
     { "src": "/", "dest": "/public/index.html" },
     { "src": "/(.*)", "dest": "/public/$1" }
-  ]
+  ],
+  "crons": [{ "path": "/api/refresh-services", "schedule": "0 14 * * *" }]
 }

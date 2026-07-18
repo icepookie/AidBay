@@ -1,2 +1,2 @@
-import {chat,send} from "./_shared.mjs";
-export default function handler(req,res){if(req.method!=="POST")return send(res,405,{error:"Method not allowed"});return send(res,200,chat(req.body||{}))}
+import {chat,send} from "./_shared.mjs";import {mossSearch} from "./_integrations.mjs";
+export default async function handler(req,res){if(req.method!=="POST")return send(res,405,{error:"Method not allowed"});const data=chat(req.body||{});if(!data.missing.length){const moss=await mossSearch(req.body?.message||"");if(moss.items.length)data.results=moss.items;data.retrieval={provider:moss.used?"moss":"curated-fallback",reason:moss.reason,timeTakenInMs:moss.timeTakenInMs}}return send(res,200,data)}

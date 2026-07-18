@@ -1,2 +1,2 @@
-import {send} from "./_shared.mjs";
-export default function handler(req,res){return send(res,200,{moss:"index-ready",brightData:"curation pipeline-ready",conversation:"ElevenLabs agent"})}
+import {send} from "./_shared.mjs";import {integrationConfig} from "./_integrations.mjs";
+export default function handler(req,res){const config=integrationConfig();return send(res,200,{moss:config.mossConfigured?`active (${config.indexName} index)`:"curated fallback — add Vercel credentials",brightData:config.brightDataConfigured?"active for scheduled provider refresh":"not active — add Vercel API key",conversation:"ElevenLabs agent",configured:config})}
