@@ -21,6 +21,7 @@ const hotResource = document.querySelector("#hot-resource");
 const orbHint = document.querySelector("#orb-hint");
 const readyComposer = document.querySelector("#ready-composer");
 const readyKeyboard = document.querySelector("#ready-keyboard");
+const readySend = document.querySelector("#ready-send");
 const readyMic = document.querySelector("#ready-mic");
 const voiceShell = document.querySelector(".voice-shell");
 const understanding = document.querySelector("#understanding");
@@ -29,6 +30,7 @@ const correctUnderstanding = document.querySelector("#correct-understanding");
 const voiceToggle = document.querySelector("#voice-toggle");
 const voiceLabel = document.querySelector("#voice-label");
 const keyboard = document.querySelector("#keyboard");
+const conversationSend = document.querySelector("#conversation-send");
 const endConversation = document.querySelector("#end-conversation");
 const help = document.querySelector("#help");
 const textDialog = document.querySelector("#text-dialog");
@@ -773,7 +775,9 @@ orb.addEventListener("click", () => {
 readyMic.addEventListener("pointerdown", () => {
   if (!elevenAgentConnected && !elevenConversation) startElevenAgent();
 }, { passive: true });
-readyKeyboard.addEventListener("click", () => { textDialog.showModal(); setTimeout(() => input.focus(), 50); });
+function submitInlineText(field){const message=field.value.trim();if(!message||waitingForResponse)return;field.value="";setConversationStarted(true);sendMessage(message,false)}
+readySend.addEventListener("click",()=>submitInlineText(readyKeyboard));
+readyKeyboard.addEventListener("keydown",event=>{if(event.key==="Enter"){event.preventDefault();submitInlineText(readyKeyboard)}});
 voiceToggle.addEventListener("pointerdown", () => { ensureAudioContext().catch(() => {}); }, { passive: true });
 
 document.addEventListener("visibilitychange", () => {
@@ -793,7 +797,8 @@ testAudio.addEventListener("click", () => {
   speakAndResume("AidBay audio is working. I can speak responses aloud.");
 });
 
-keyboard.addEventListener("click", () => { textDialog.showModal(); setTimeout(() => input.focus(), 50); });
+conversationSend.addEventListener("click",()=>submitInlineText(keyboard));
+keyboard.addEventListener("keydown",event=>{if(event.key==="Enter"){event.preventDefault();submitInlineText(keyboard)}});
 help.addEventListener("click", () => helpDialog.showModal());
 closeText.addEventListener("click", () => textDialog.close());
 closeHelp.addEventListener("click", () => helpDialog.close());

@@ -32,9 +32,11 @@ h1, .voice-header h1 { max-width: 326px; margin: 0 auto; color: #1c1d1f; font-si
 .orb:active::after { animation: ripple .65s ease-out; }
 .orb-hint { margin: 0; color: var(--muted); font-size: 13px; text-align: center; }
 .ready-composer, .voice-controls { position: fixed; z-index: 5; right: max(20px, calc((100vw - 720px)/2)); bottom: 28px; left: max(20px, calc((100vw - 720px)/2)); display: flex; gap: 12px; background: #fbfbfa; }
-.ready-composer > button, .composer-field { height: 48px; border: 1px solid var(--line); border-radius: 24px; color: var(--muted); background: white; font-size: 14px; text-align: left; }
-.ready-composer > button:first-child, .composer-field { flex: 1; padding: 0 16px; }
-.ready-composer > button:last-child, .voice-toggle { display: grid; width: 48px; min-width: 48px; height: 48px; place-items: center; border: 0; border-radius: 50%; color: var(--teal); background: #eff3f0; animation: mic-idle 3s ease-in-out infinite; }
+.ready-composer input, .composer-field { min-width:0; height:48px; border:1px solid var(--line); border-radius:24px; color:var(--ink); background:white; font:inherit; font-size:16px; text-align:left; outline:none; }
+.ready-composer input, .composer-field { flex:1; padding:0 16px; }
+.ready-composer input:focus, .composer-field:focus { border-color:var(--teal); box-shadow:0 0 0 3px rgba(0,126,105,.12); }
+.ready-composer #ready-mic, .voice-toggle { display:grid; width:48px; min-width:48px; height:48px; place-items:center; border:0; border-radius:50%; color:var(--teal); background:#eff3f0; animation:mic-idle 3s ease-in-out infinite; }
+.inline-send { height:48px; padding:0 18px; border:0; border-radius:24px; color:white; background:var(--teal); font-weight:800; cursor:pointer; }
 .end-conversation { height:48px; padding:0 16px; border:1px solid #e3a19b; border-radius:24px; background:#fff7f6; color:#a93f37; font-weight:700; white-space:nowrap; }
 .voice-toggle.active { color: white; background: var(--teal); animation: none; }
 .mic-icon { margin: 0; font-size: 11px; }
@@ -121,6 +123,7 @@ textarea, select { width: 100%; margin-top: 8px; padding: 12px; border: 1px soli
 @keyframes call-ring { 50% { box-shadow: 0 0 0 14px rgba(141,170,148,.10); } }
 @keyframes farewell { from { opacity: 0; transform: translateY(6px); } }
 @media (max-width: 520px) { .voice-shell { padding-inline: 20px; } .companion-bar { margin-inline: -20px; padding-inline: 20px; } .ready-composer, .voice-controls { right: 20px; left: 20px; } }
+@media (max-width: 620px) { .voice-controls .help-floating { display:none; } .end-conversation { padding-inline:12px; } .inline-send { padding-inline:14px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; scroll-behavior: auto !important; } }
 .voice-shell.is-listening .companion-bar { background:#e8f7f2; border-bottom-color:#8bcdbd; box-shadow:0 4px 18px rgba(11,126,105,.12); }
 .voice-shell.is-listening #companion-step { color:#007d69; font-weight:700; }
