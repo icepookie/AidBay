@@ -85,7 +85,9 @@ function requestElevenToken() { return fetch("/api/elevenlabs-token", { cache: "
   if (!response.ok) throw new Error("Could not obtain ElevenLabs conversation token");
   return response.json();
 }); }
-let elevenTokenPromise = requestElevenToken();
+// Voice credentials are short-lived and may be single-use. Request them only
+// from the user's tap so a prefetched token can never be stale at startup.
+let elevenTokenPromise = null;
 
 function refreshVoices() {
   if (!("speechSynthesis" in window)) return;
@@ -265,12 +267,8 @@ async function startElevenAgent() {
     if (!navigator.mediaDevices?.getUserMedia) throw new Error("This browser does not support microphone access");
     const permissionStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
     permissionStream.getTracks().forEach(track=>track.stop());
-    if (!elevenTokenPromise) elevenTokenPromise = requestElevenToken();
-    const { conversationToken } = await elevenTokenPromise;
-    elevenTokenPromise = null;
-    elevenConversation = await Conversation.startSession({
-      conversationToken,
-      connectionType: "webrtc",
+    const credentials = await requestElevenToken();
+    const sessionOptions = {
       useWakeLock: true,
       dynamicVariables: { app_name: "AidBay", branch_reference: ELEVEN_BRANCH_ID },
       clientTools: {
@@ -347,7 +345,7 @@ async function startElevenAgent() {
         voiceToggle.classList.remove("active");
         voiceLabel.textContent = "Pause conversation";
         clearTimeout(responseWaitTimer);
-        if (!elevenTokenPromise) elevenTokenPromise = requestElevenToken();
+        elevenTokenPromise = null;
         setConversationStarted(false);
         setVisualState("ready", "Ready when you are", "Tap start to speak with your AidBay agent.");
       },
@@ -358,11 +356,20 @@ async function startElevenAgent() {
         companionStep.textContent = "Voice needs attention";
         audioStatus.textContent = `ElevenLabs connection issue: ${message}`;
       }
-    });
+    };
+    let webRtcError = null;
+    if (credentials.conversationToken) {
+      try { elevenConversation = await Conversation.startSession({...sessionOptions,conversationToken:credentials.conversationToken,connectionType:"webrtc"}); }
+      catch (error) { webRtcError = error; console.warn("ElevenLabs WebRTC startup failed; trying WebSocket.",error); }
+    }
+    if (!elevenConversation && credentials.signedUrl) {
+      elevenConversation = await Conversation.startSession({...sessionOptions,signedUrl:credentials.signedUrl,connectionType:"websocket"});
+    }
+    if (!elevenConversation) throw webRtcError || new Error("ElevenLabs returned no usable voice connection");
   } catch (error) {
     elevenConnecting = false;
     orb.disabled = false;
-    elevenTokenPromise = requestElevenToken();
+    elevenTokenPromise = null;
     elevenConversation = null;
     elevenAgentConnected = false;
     voiceSessionActive = false;
@@ -379,7 +386,7 @@ async function stopElevenAgent() {
   if (elevenConversation) await elevenConversation.endSession();
   elevenConversation = null;
   elevenAgentConnected = false;
-  elevenTokenPromise = requestElevenToken();
+  elevenTokenPromise = null;
 }
 
 function availabilityClass(state) { return state === "accepting" ? "positive" : state === "full" || state === "closed" ? "negative" : "uncertain"; }
