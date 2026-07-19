@@ -75,6 +75,7 @@ let awaitingUserResponse = false;
 let lastRenderedResultSignature = "";
 let expectedMissing = [];
 let lastAssistantMessage = "";
+let liveUserDraft = null;
 let elevenConversation = null;
 let elevenAgentConnected = false;
 let elevenConnecting = false;
@@ -115,14 +116,35 @@ function appendTranscript(role, text) {
   if (previous?.role === role && previous.text.toLowerCase() === text.toLowerCase()) return;
   transcriptEntries.push({ role, text });
   transcriptEntries = transcriptEntries.slice(-60);
-  const line = document.createElement("p");
+  const line = role === "user" && liveUserDraft ? liveUserDraft : document.createElement("p");
   line.className = `transcript-line ${role}`;
   const name = document.createElement("strong");
   name.textContent = role === "user" ? "You: " : "AidBay: ";
-  line.append(name, document.createTextNode(text));
-  transcript.append(line);
+  line.replaceChildren(name, document.createTextNode(text));
+  if (!line.isConnected) transcript.append(line);
+  if (line === liveUserDraft) liveUserDraft = null;
   liveCaption.hidden = true;
   while (transcript.children.length > 60) transcript.firstElementChild?.remove();
+  transcript.scrollTop = transcript.scrollHeight;
+}
+
+function updateLiveUserDraft(text, isFinal = false) {
+  text = String(text || "").trim();
+  if (!text) return;
+  if (!liveUserDraft) {
+    liveUserDraft = document.createElement("p");
+    liveUserDraft.className = "transcript-line user live-draft";
+    liveUserDraft.setAttribute("aria-live", "polite");
+    transcript.append(liveUserDraft);
+  }
+  liveUserDraft.classList.toggle("is-finalizing", isFinal);
+  const words = document.createElement("span");
+  words.textContent = text;
+  const cursor = document.createElement("span");
+  cursor.className = "live-cursor";
+  cursor.setAttribute("aria-hidden", "true");
+  liveUserDraft.replaceChildren(words, cursor);
+  liveCaption.textContent = text;
   transcript.scrollTop = transcript.scrollHeight;
 }
 
@@ -293,6 +315,7 @@ async function startElevenAgent() {
         liveCaption.textContent = "Listening… start speaking now.";
         companionStep.textContent = "Mic on";
         setVisualState("listening", "I’m listening…", "Start speaking whenever you’re ready.");
+        setTimeout(startRecognition, 100);
         fetch("/api/services").then(response=>response.json()).then(items=>elevenConversation?.sendContextualUpdate(`AidBay policy: Practice curiosity over assumption. Never infer gender, family status, disability, eligibility, preferences, or urgency. If the user asks for shelter without specifying who it is for, ask neutrally: “Is this for one adult, a family with children, or a young person?” Never ask them to confirm they are an adult woman unless they themselves said woman. For one adult without stated gender preferences, use gender-neutral adult options; gender-specific options may be offered only after the person requests or identifies a relevant preference. Ask one question at a time and wait. Never say bracketed tone directions, ask whether the user is still there, narrate ending due to silence, or greet first. Recommend ONLY a service from this approved catalog and only after AidBay displays results: ${JSON.stringify(items.map(({id,name,phone,address,eligibility,availabilityLabel})=>({id,name,phone,address,eligibility,availabilityLabel})))}. Never invent organizations. If no cards are displayed, ask the next neutral question. When the user asks to call, use the callService client tool.`)).catch(()=>{});
         integrationSummary.textContent = "Voice conversation: your live ElevenLabs agent. Service retrieval: AidBay curated records and Moss index.";
       },
@@ -324,6 +347,7 @@ async function startElevenAgent() {
       },
       onModeChange: ({ mode }) => {
         agentSpeaking = mode === "speaking";
+        if (mode === "speaking") stopRecognition();
         if (mode === "listening") {
           companionStep.textContent = "Mic on";
           if (pendingCompletionUI === "feedback") { pendingCompletionUI = null; showFeedback(); }
@@ -334,6 +358,7 @@ async function startElevenAgent() {
             setVisualState("listening", "I’m listening…", "Your ElevenLabs AidBay agent is ready.");
           }
           clearTimeout(responseWaitTimer);
+          setTimeout(startRecognition, 100);
         }
       },
       onDisconnect: () => {
@@ -345,6 +370,7 @@ async function startElevenAgent() {
         voiceToggle.classList.remove("active");
         voiceLabel.textContent = "Pause conversation";
         clearTimeout(responseWaitTimer);
+        stopRecognition();
         elevenTokenPromise = null;
         setConversationStarted(false);
         setVisualState("ready", "Ready when you are", "Tap start to speak with your AidBay agent.");
@@ -738,6 +764,12 @@ if (Recognition) {
     }
     liveCaption.textContent = finalText || interim || "Listening…";
     clearTimeout(interimCommitTimer);
+    if (elevenAgentConnected) {
+      const visibleText = (finalText || interim).trim();
+      if (visibleText) updateLiveUserDraft(visibleText, Boolean(finalText.trim()));
+      if (finalText.trim()) recognitionSubmitted = true;
+      return;
+    }
     if (finalText.trim() && !recognitionSubmitted) {
       recognitionSubmitted = true;
       sendMessage(finalText.trim(), true);
@@ -755,7 +787,7 @@ if (Recognition) {
   };
   recognition.onend = () => {
     recognitionRunning = false;
-    if (voiceSessionActive && !agentSpeaking && !waitingForResponse) setTimeout(startRecognition, 350);
+    if (voiceSessionActive && !agentSpeaking && !waitingForResponse && !recognitionSubmitted) setTimeout(startRecognition, 350);
   };
   recognition.onerror = (event) => {
     recognitionRunning = false;
@@ -843,6 +875,7 @@ function resetConversation() {
   try { currentAudioSource?.stop(); } catch { /* already stopped */ }
   conversationState = { stage: "new" };
   transcriptEntries = [];
+  liveUserDraft = null;
   transcript.replaceChildren();
   results.replaceChildren();
   latestResults = [];
@@ -860,7 +893,7 @@ function resetConversation() {
 }
 reset.addEventListener("click", resetConversation);
 endConversation.addEventListener("click", resetConversation);
-clearTranscript.addEventListener("click", () => { transcriptEntries = []; transcript.replaceChildren(); });
+clearTranscript.addEventListener("click", () => { transcriptEntries = []; liveUserDraft = null; transcript.replaceChildren(); });
 
 async function loadServices() {
   const response = await fetch("/api/services");
