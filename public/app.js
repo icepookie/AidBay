@@ -365,6 +365,11 @@ async function startElevenAgent() {
     if (!elevenConversation && credentials.signedUrl) {
       elevenConversation = await Conversation.startSession({...sessionOptions,signedUrl:credentials.signedUrl,connectionType:"websocket"});
     }
+    if (!elevenConversation) {
+      // The user's Talk-to link is public, so this remains a final safe path if
+      // a network blocks WebRTC and the workspace does not issue signed URLs.
+      elevenConversation = await Conversation.startSession({...sessionOptions,agentId:ELEVEN_AGENT_ID,connectionType:"websocket"});
+    }
     if (!elevenConversation) throw webRtcError || new Error("ElevenLabs returned no usable voice connection");
   } catch (error) {
     elevenConnecting = false;
