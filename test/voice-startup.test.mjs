@@ -1,0 +1,2 @@
+import test from "node:test";import assert from "node:assert/strict";import {readFile} from "node:fs/promises";
+test("voice startup does not inject the full service catalog",async()=>{const app=await readFile(new URL("../public/app.js",import.meta.url),"utf8");assert.doesNotMatch(app,/Recommend ONLY a service from this approved catalog/);assert.match(app,/three grounded matches/);assert.match(app,/syncUserMessageWithAidBay/)});

@@ -315,8 +315,10 @@ async function startElevenAgent() {
         liveCaption.textContent = "Listening… start speaking now.";
         companionStep.textContent = "Mic on";
         setVisualState("listening", "I’m listening…", "Start speaking whenever you’re ready.");
-        setTimeout(startRecognition, 100);
-        fetch("/api/services").then(response=>response.json()).then(items=>elevenConversation?.sendContextualUpdate(`AidBay policy: Practice curiosity over assumption. Never infer gender, family status, disability, eligibility, preferences, or urgency. If the user asks for shelter without specifying who it is for, ask neutrally: “Is this for one adult, a family with children, or a young person?” Never ask them to confirm they are an adult woman unless they themselves said woman. For one adult without stated gender preferences, use gender-neutral adult options; gender-specific options may be offered only after the person requests or identifies a relevant preference. Ask one question at a time and wait. Never say bracketed tone directions, ask whether the user is still there, narrate ending due to silence, or greet first. Recommend ONLY a service from this approved catalog and only after AidBay displays results: ${JSON.stringify(items.map(({id,name,phone,address,eligibility,availabilityLabel})=>({id,name,phone,address,eligibility,availabilityLabel})))}. Never invent organizations. If no cards are displayed, ask the next neutral question. When the user asks to call, use the callService client tool.`)).catch(()=>{});
+        // Keep startup context deliberately small. The three grounded matches are
+        // supplied later by syncUserMessageWithAidBay; sending all 50 records here
+        // can exceed a live session's initialization limits and disconnect it.
+        elevenConversation?.sendContextualUpdate("AidBay policy: Practice curiosity over assumption. Ask one short question at a time and wait. Never infer gender, family status, disability, eligibility, preferences, or urgency. Do not recommend a service until AidBay supplies matched records and displays cards. Never invent an organization or promise availability. Do not say bracketed tone directions, ask whether the user is still there, narrate silence, or greet first. When the user asks to call a displayed service, use the callService tool.");
         integrationSummary.textContent = "Voice conversation: your live ElevenLabs agent. Service retrieval: AidBay curated records and Moss index.";
       },
       onMessage: ({ message, role }) => {
