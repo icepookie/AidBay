@@ -83,6 +83,8 @@ let liveUserDraft = null;
 let elevenConversation = null;
 let elevenAgentConnected = false;
 let elevenConnecting = false;
+let elevenConnectionFailed = false;
+let localVoiceFallback = false;
 let micPaused = false;
 let callLeftPage = false;
 let localSyncPromise = Promise.resolve();
@@ -165,7 +167,6 @@ function appendTranscript(role, text) {
   if (!text) return;
   if (/^[.·…\s-]+$/.test(text)) return;
   if (role === "assistant" && /\b(?:are you still there|if you(?:'re| are) still there|please let me know if you need assistance)\b/i.test(text)) return;
-  if (role === "assistant" && /^(?:hi|hello)(?: there)?[!.]?\s*(?:how (?:can|may) i help|what can i)/i.test(text)) return;
   const previous = transcriptEntries.at(-1);
   if (previous?.role === role && previous.text.toLowerCase() === text.toLowerCase()) return;
   transcriptEntries.push({ role, text });
@@ -334,6 +335,8 @@ async function syncUserMessageWithAidBay(message) {
 async function startElevenAgent() {
   if (elevenAgentConnected || elevenConversation || elevenConnecting) return;
   elevenConnecting = true;
+  elevenConnectionFailed = false;
+  localVoiceFallback = false;
   orb.disabled = true;
   setConversationStarted(true);
   liveCaption.textContent = "Connecting to the microphone…";
@@ -361,6 +364,7 @@ async function startElevenAgent() {
         elevenConnecting = false;
         orb.disabled = false;
         elevenAgentConnected = true;
+        elevenConnectionFailed = false;
         voiceSessionActive = true;
         micPaused = false;
         voiceToggle.classList.add("active");
@@ -422,19 +426,24 @@ async function startElevenAgent() {
         elevenAgentConnected = false;
         elevenConversation = null;
         voiceSessionActive = false;
-        voiceToggle.classList.remove("active");
-        voiceLabel.textContent = "Pause conversation";
         clearTimeout(responseWaitTimer);
         stopRecognition();
         elevenTokenPromise = null;
+        if (elevenConnectionFailed) {
+          activateLocalVoiceFallback();
+          return;
+        }
+        voiceToggle.classList.remove("active");
+        voiceLabel.textContent = "Pause conversation";
         setConversationStarted(false);
         setVisualState("ready", "Ready when you are", "Tap start to speak with your AidBay agent.");
       },
       onError: (message) => {
+        elevenConnectionFailed = true;
         setConversationStarted(true);
         const detail = typeof message === "string" ? message : JSON.stringify(message);
-        liveCaption.textContent = `Voice could not start: ${detail || "unknown connection error"}. You can use the text field while I reconnect.`;
-        companionStep.textContent = "Voice needs attention";
+        liveCaption.textContent = `ElevenLabs disconnected${detail ? `: ${detail}` : ""}. Switching to the backup microphone—keep speaking or type below.`;
+        companionStep.textContent = "Switching to backup voice";
         audioStatus.textContent = `ElevenLabs connection issue: ${message}`;
       }
     };
@@ -458,14 +467,36 @@ async function startElevenAgent() {
     elevenTokenPromise = null;
     elevenConversation = null;
     elevenAgentConnected = false;
-    voiceSessionActive = false;
-    voiceLabel.textContent = "Pause conversation";
-    setConversationStarted(false);
+    elevenConnectionFailed = true;
     const permissionDenied=error?.name==="NotAllowedError"||/permission|not allowed/i.test(String(error?.message||error));
-    companionStep.textContent = "Ready to listen";
-    setVisualState("ready", permissionDenied?"Microphone permission is off":"Voice couldn’t connect", permissionDenied?"Allow microphone access in your browser, or type below.":"Tap the circle to retry, or type below while voice reconnects.");
+    if (permissionDenied) {
+      voiceSessionActive = false;
+      voiceLabel.textContent = "Pause conversation";
+      setConversationStarted(true);
+      flowStage.hidden = true;
+      companionStep.textContent = "Type your request below";
+      liveCaption.textContent = "Microphone permission is off. You can still type your request below.";
+    } else activateLocalVoiceFallback();
     audioStatus.textContent = `Voice start error: ${error?.name||"ConnectionError"}.`;
   }
+}
+
+function activateLocalVoiceFallback() {
+  elevenConversation = null;
+  elevenAgentConnected = false;
+  elevenConnecting = false;
+  localVoiceFallback = true;
+  agentSpeaking = false;
+  micPaused = false;
+  setConversationStarted(true);
+  flowStage.hidden = true;
+  voiceSessionActive = Boolean(recognition);
+  voiceToggle.classList.toggle("active", Boolean(recognition));
+  voiceLabel.textContent = recognition ? "Pause conversation" : "Voice unavailable—use text";
+  companionStep.textContent = recognition ? "Backup mic on" : "Type your request below";
+  liveCaption.textContent = recognition ? "Listening with the backup microphone—speak now, or type below." : "Voice is unavailable in this browser. Type your request below to continue.";
+  setVisualState(recognition ? "listening" : "paused", recognition ? "I’m listening…" : "Type your request", recognition ? "The backup microphone is active." : "The conversation is still open below.");
+  if (recognition) setTimeout(startRecognition, 150);
 }
 
 async function stopElevenAgent() {
@@ -867,6 +898,15 @@ if (Recognition) {
 }
 
 voiceToggle.addEventListener("click", () => {
+  if (localVoiceFallback) {
+    micPaused = !micPaused;
+    voiceSessionActive = !micPaused;
+    voiceToggle.classList.toggle("active", !micPaused);
+    voiceLabel.textContent = micPaused ? "Resume conversation" : "Pause conversation";
+    if (micPaused) stopRecognition(); else startRecognition();
+    companionStep.textContent = micPaused ? "Conversation paused" : "Backup mic on";
+    return;
+  }
   if (!elevenConversation) return startElevenAgent();
   micPaused = !micPaused;
   elevenConversation.setMicMuted(micPaused);
@@ -941,6 +981,8 @@ function resetConversation() {
   voiceSessionActive = false;
   agentSpeaking = false;
   waitingForResponse = false;
+  elevenConnectionFailed = false;
+  localVoiceFallback = false;
   stopRecognition();
   stopElevenAgent().catch(() => {});
   speechSynthesis?.cancel();
