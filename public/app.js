@@ -35,6 +35,10 @@ const endConversation = document.querySelector("#end-conversation");
 const help = document.querySelector("#help");
 const textDialog = document.querySelector("#text-dialog");
 const helpDialog = document.querySelector("#help-dialog");
+const historyButton = document.querySelector("#history-button");
+const historyDialog = document.querySelector("#history-dialog");
+const closeHistory = document.querySelector("#close-history");
+const historyList = document.querySelector("#history-list");
 const form = document.querySelector("#chat-form");
 const input = document.querySelector("#message");
 const closeText = document.querySelector("#close-text");
@@ -82,6 +86,56 @@ let elevenConnecting = false;
 let micPaused = false;
 let callLeftPage = false;
 let localSyncPromise = Promise.resolve();
+const CHAT_HISTORY_KEY = "aidbay-chat-history-v1";
+let currentChatId = createChatId();
+let currentChatStartedAt = new Date().toISOString();
+let conversationResultSnapshots = [];
+
+function createChatId() { return globalThis.crypto?.randomUUID?.() || `chat-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
+function readChatHistory() { try { const value=JSON.parse(localStorage.getItem(CHAT_HISTORY_KEY)||"[]"); return Array.isArray(value)?value:[]; } catch { return []; } }
+function saveCurrentChat() {
+  if (!transcriptEntries.length && !conversationResultSnapshots.length) return;
+  const history=readChatHistory();
+  const record={id:currentChatId,startedAt:currentChatStartedAt,updatedAt:new Date().toISOString(),transcript:transcriptEntries.slice(),resultSnapshots:conversationResultSnapshots.slice()};
+  const existing=history.findIndex((chat)=>chat.id===currentChatId);
+  if(existing>=0)history.splice(existing,1);
+  history.unshift(record);
+  try { localStorage.setItem(CHAT_HISTORY_KEY,JSON.stringify(history.slice(0,20))); } catch { /* Private browsing may disable storage. */ }
+}
+function initializeChatRecord(){currentChatId=createChatId();currentChatStartedAt=new Date().toISOString();conversationResultSnapshots=[];}
+function recordResultSnapshot(items){
+  if(!items.length)return;
+  const signature=items.map((item)=>item.id).join("|");
+  const previous=conversationResultSnapshots.at(-1);
+  if(previous?.signature===signature&&previous.afterEntry===transcriptEntries.length)return;
+  conversationResultSnapshots.push({afterEntry:transcriptEntries.length,signature,items:items.map((item)=>({id:item.id,name:item.name,summary:item.summary,address:item.address,phone:item.phone,email:item.email,usualHours:item.usualHours,eligibility:item.eligibility,availabilityLabel:item.availabilityLabel,source:item.source}))});
+  conversationResultSnapshots=conversationResultSnapshots.slice(-12);
+  saveCurrentChat();
+}
+function historyServiceCard(item){
+  const card=document.createElement("article");card.className="history-service";
+  const name=document.createElement("strong");name.textContent=item.name;
+  const summary=document.createElement("p");summary.textContent=item.summary||"Service option";
+  const details=document.createElement("p");details.textContent=[item.address,item.usualHours,item.availabilityLabel].filter(Boolean).join(" · ");
+  card.append(name,summary,details);
+  if(item.phone){const call=document.createElement("a");call.href=`tel:${item.phone.replace(/\D/g,"")}`;call.textContent=`Call ${item.phone}`;card.append(call);}
+  if(item.source?.url){const source=document.createElement("a");source.href=item.source.url;source.target="_blank";source.rel="noreferrer";source.textContent="View source";card.append(source);}
+  return card;
+}
+function renderChatHistory(){
+  saveCurrentChat();
+  const history=readChatHistory();historyList.replaceChildren();
+  if(!history.length){const empty=document.createElement("p");empty.className="history-empty";empty.textContent="No previous chats yet. Your next conversation will appear here.";historyList.append(empty);return;}
+  history.forEach((chat)=>{
+    const panel=document.createElement("details");panel.className="history-chat";
+    const summary=document.createElement("summary");const title=document.createElement("strong");const firstUser=chat.transcript?.find((entry)=>entry.role==="user")?.text||"AidBay conversation";title.textContent=firstUser.length>72?`${firstUser.slice(0,72)}…`:firstUser;
+    const date=document.createElement("small");date.textContent=`${chat.id===currentChatId?"Current chat · ":""}${new Date(chat.startedAt).toLocaleString()}`;summary.append(title,date);
+    const log=document.createElement("div");log.className="history-transcript";
+    const snapshots=new Map();(chat.resultSnapshots||[]).forEach((snapshot)=>{const list=snapshots.get(snapshot.afterEntry)||[];list.push(snapshot);snapshots.set(snapshot.afterEntry,list);});
+    (chat.transcript||[]).forEach((entry,index)=>{const message=document.createElement("p");message.className=`history-message ${entry.role}`;message.textContent=entry.text;log.append(message);(snapshots.get(index+1)||[]).forEach((snapshot)=>{const cards=document.createElement("section");cards.className="history-cards";snapshot.items.forEach((item)=>cards.append(historyServiceCard(item)));log.append(cards);});});
+    panel.append(summary,log);historyList.append(panel);
+  });
+}
 function requestElevenToken() { return fetch("/api/elevenlabs-token", { cache: "no-store" }).then(async (response) => {
   if (!response.ok) throw new Error("Could not obtain ElevenLabs conversation token");
   return response.json();
@@ -126,6 +180,7 @@ function appendTranscript(role, text) {
   liveCaption.hidden = true;
   while (transcript.children.length > 60) transcript.firstElementChild?.remove();
   transcript.scrollTop = transcript.scrollHeight;
+  saveCurrentChat();
 }
 
 function updateLiveUserDraft(text, isFinal = false) {
@@ -430,6 +485,7 @@ function contactAction(item) {
 
 function showServiceList(items) {
   latestResults = items;
+  recordResultSnapshot(items);
   const signature = items.map((item) => item.id).join("|");
   if (signature === lastRenderedResultSignature) return;
   lastRenderedResultSignature = signature;
@@ -671,12 +727,16 @@ async function sendMessage(message, fromVoice = false) {
     waitingForResponse = false;
     if (data.nextStep === "feedback") showFeedback();
     else if (data.nextStep === "another_request") beginAnotherRequest();
-    else if (latestResults.length) showSpokenSummary(latestResults);
+    else if (latestResults.length) {
+      if (voiceSessionActive && fromVoice) showSpokenSummary(latestResults);
+      else { flowStage.hidden=true; showServiceList(latestResults); companionStep.textContent="Reviewing options together"; }
+    }
     else {
-      setMainConversationVisible(true);
+      setConversationStarted(true);
+      flowStage.hidden = true;
       renderResults([]);
       if (voiceSessionActive && fromVoice) speakAndResume(data.reply);
-      else setVisualState("ready", "Ready when you are", "Tap start to continue by voice, or use the keyboard.");
+      else companionStep.textContent = "Waiting for your response";
     }
   } catch {
     waitingForResponse = false;
@@ -684,7 +744,8 @@ async function sendMessage(message, fromVoice = false) {
     appendTranscript("assistant", error);
     liveCaption.textContent = error;
     setVisualState("paused", "Something went wrong", "Try again or use the keyboard.");
-    setMainConversationVisible(true);
+    setConversationStarted(true);
+    flowStage.hidden = true;
     if (voiceSessionActive) speakAndResume(error);
   }
 }
@@ -823,7 +884,17 @@ orb.addEventListener("click", () => {
 readyMic.addEventListener("pointerdown", () => {
   if (!elevenAgentConnected && !elevenConversation) startElevenAgent();
 }, { passive: true });
-function submitInlineText(field){const message=field.value.trim();if(!message||waitingForResponse)return;field.value="";setConversationStarted(true);sendMessage(message,false)}
+function submitInlineText(field){
+  const message=field.value.trim();if(!message||waitingForResponse)return;
+  field.value="";
+  if(!voiceShell.classList.contains("conversation-active")){
+    saveCurrentChat();
+    initializeChatRecord();
+    conversationState={stage:"new"};latestResults=[];lastRenderedResultSignature="";expectedMissing=[];lastAssistantMessage="";
+    transcriptEntries=[];transcript.replaceChildren();renderUnderstanding(null);
+  }
+  setConversationStarted(true);companionStep.textContent="Hearing and understanding";sendMessage(message,false);
+}
 readySend.addEventListener("click",()=>submitInlineText(readyKeyboard));
 readyKeyboard.addEventListener("keydown",event=>{if(event.key==="Enter"){event.preventDefault();submitInlineText(readyKeyboard)}});
 voiceToggle.addEventListener("pointerdown", () => { ensureAudioContext().catch(() => {}); }, { passive: true });
@@ -866,6 +937,7 @@ form.addEventListener("submit", (event) => {
 });
 
 function resetConversation() {
+  saveCurrentChat();
   voiceSessionActive = false;
   agentSpeaking = false;
   waitingForResponse = false;
@@ -875,6 +947,7 @@ function resetConversation() {
   try { currentAudioSource?.stop(); } catch { /* already stopped */ }
   conversationState = { stage: "new" };
   transcriptEntries = [];
+  initializeChatRecord();
   liveUserDraft = null;
   transcript.replaceChildren();
   results.replaceChildren();
@@ -894,6 +967,8 @@ function resetConversation() {
 reset.addEventListener("click", resetConversation);
 endConversation.addEventListener("click", resetConversation);
 clearTranscript.addEventListener("click", () => { transcriptEntries = []; liveUserDraft = null; transcript.replaceChildren(); });
+historyButton.addEventListener("click",()=>{renderChatHistory();historyDialog.showModal();});
+closeHistory.addEventListener("click",()=>historyDialog.close());
 
 async function loadServices() {
   const response = await fetch("/api/services");

@@ -4,6 +4,8 @@
 html, body { margin: 0; min-height: 100%; background: #fbfbfa; }
 button, textarea, select { font: inherit; }
 button { cursor: pointer; }
+.history-button { position:fixed; z-index:20; top:14px; left:16px; display:flex; align-items:center; gap:7px; min-height:40px; padding:0 13px; border:1px solid var(--line); border-radius:999px; color:var(--teal); background:rgba(255,255,255,.94); box-shadow:0 4px 14px rgba(34,94,100,.08); font-weight:700; }
+.history-button:active { transform:scale(.97); }
 .sr-only { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 .voice-shell { position: relative; width: 100%; min-height: 100vh; padding: 0 max(20px, calc((100vw - 720px)/2)) 96px; overflow: clip; background: #fbfbfa; }
 .companion-bar { display: flex; height: 52px; align-items: center; gap: 12px; margin: 20px calc(-1 * max(20px, calc((100vw - 720px)/2))) 0; padding: 0 max(20px, calc((100vw - 720px)/2)); border-bottom: 1px solid var(--line); }
@@ -106,6 +108,25 @@ h1, .voice-header h1 { max-width: 326px; margin: 0 auto; color: #1c1d1f; font-si
 dialog { width: min(calc(100% - 28px), 560px); padding: 0; border: 0; border-radius: 20px; color: #263d45; box-shadow: 0 25px 80px rgba(15,50,60,.25); }
 dialog::backdrop { background: rgba(20,44,51,.35); backdrop-filter: blur(4px); }
 dialog form, .help-content { padding: 24px; }
+.history-content { padding:24px; }
+.history-dialog { width:min(calc(100% - 28px),680px); max-height:min(82vh,760px); }
+.history-eyebrow { margin:0 0 5px; color:var(--teal); font-size:11px; font-weight:800; text-transform:uppercase; }
+.history-privacy { margin:4px 0 18px; color:var(--muted); font-size:13px; line-height:1.45; }
+.history-list { display:grid; gap:12px; max-height:60vh; overflow:auto; padding:2px; }
+.history-empty { padding:34px 14px; border:1px dashed #ccd8d2; border-radius:14px; color:var(--muted); text-align:center; }
+.history-chat { border:1px solid var(--line); border-radius:14px; background:#fff; overflow:hidden; }
+.history-chat > summary { display:grid; gap:4px; padding:14px 16px; list-style:none; cursor:pointer; }
+.history-chat > summary::-webkit-details-marker { display:none; }
+.history-chat > summary strong { color:#263d45; font-size:14px; }
+.history-chat > summary small { color:var(--muted); font-size:11px; }
+.history-transcript { display:flex; flex-direction:column; gap:10px; padding:14px; border-top:1px solid var(--line); background:#fbfbfa; }
+.history-message { max-width:82%; margin:0; padding:9px 12px; border:1px solid var(--line); border-radius:14px; background:#fff; font-size:13px; line-height:1.4; }
+.history-message.user { align-self:flex-end; border:0; background:#eff3f0; }
+.history-cards { display:grid; gap:7px; margin:2px 0 6px; }
+.history-service { padding:11px; border:1px solid #c7d9ce; border-radius:12px; background:#fff; }
+.history-service strong { display:block; margin-bottom:4px; font-size:13px; }
+.history-service p { margin:3px 0; color:var(--muted); font-size:11px; line-height:1.35; }
+.history-service a { display:inline-block; margin:7px 8px 0 0; color:var(--teal); font-size:11px; font-weight:800; }
 .dialog-heading { display: flex; justify-content: space-between; gap: 12px; }
 .dialog-heading h2 { margin-top: 0; }
 .round-control { width: 42px; height: 42px; border: 1px solid var(--line); border-radius: 50%; background: white; }
@@ -127,6 +148,7 @@ textarea, select { width: 100%; margin-top: 8px; padding: 12px; border: 1px soli
 @keyframes call-ring { 50% { box-shadow: 0 0 0 14px rgba(141,170,148,.10); } }
 @keyframes farewell { from { opacity: 0; transform: translateY(6px); } }
 @media (max-width: 520px) { .voice-shell { padding-inline: 20px; } .companion-bar { margin-inline: -20px; padding-inline: 20px; } .ready-composer, .voice-controls { right: 20px; left: 20px; } }
+@media (max-width:520px) { .history-button span:last-child { display:none; } .history-button { width:40px; justify-content:center; padding:0; } }
 @media (max-width: 620px) { .voice-controls .help-floating { display:none; } .end-conversation { padding-inline:12px; } .inline-send { padding-inline:14px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; scroll-behavior: auto !important; } }
 .voice-shell.is-listening .companion-bar { background:#e8f7f2; border-bottom-color:#8bcdbd; box-shadow:0 4px 18px rgba(11,126,105,.12); }
