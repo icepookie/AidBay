@@ -292,7 +292,6 @@ async function startElevenAgent() {
     const credentials = await requestElevenToken();
     const sessionOptions = {
       useWakeLock: true,
-      dynamicVariables: { app_name: "AidBay", branch_reference: ELEVEN_BRANCH_ID },
       clientTools: {
         showServiceResults: () => { if (latestResults.length) showServiceList(latestResults); return "Displayed the verified service options."; },
         saveCurrentService: () => { if (latestResults[0]) saveService(latestResults[0]); return "Saved the current service locally on this device."; }
@@ -315,10 +314,9 @@ async function startElevenAgent() {
         liveCaption.textContent = "Listening… start speaking now.";
         companionStep.textContent = "Mic on";
         setVisualState("listening", "I’m listening…", "Start speaking whenever you’re ready.");
-        // Keep startup context deliberately small. The three grounded matches are
-        // supplied later by syncUserMessageWithAidBay; sending all 50 records here
-        // can exceed a live session's initialization limits and disconnect it.
-        elevenConversation?.sendContextualUpdate("AidBay policy: Practice curiosity over assumption. Ask one short question at a time and wait. Never infer gender, family status, disability, eligibility, preferences, or urgency. Do not recommend a service until AidBay supplies matched records and displays cards. Never invent an organization or promise availability. Do not say bracketed tone directions, ask whether the user is still there, narrate silence, or greet first. When the user asks to call a displayed service, use the callService tool.");
+        // Do not send contextual updates during startup. Some ElevenLabs agent
+        // branches reject initialization-time payloads after audio has begun.
+        // Grounded service context is supplied only after the user's first turn.
         integrationSummary.textContent = "Voice conversation: your live ElevenLabs agent. Service retrieval: AidBay curated records and Moss index.";
       },
       onMessage: ({ message, role }) => {
